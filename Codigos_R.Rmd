@@ -1,0 +1,1055 @@
+---
+title: An R Markdown document converted from "Codigos_R.ipynb"
+output: html_document
+---
+
+# Carregando Pacotes
+
+```{r}
+library(tidyverse) # data science
+library(plotly) # interactive data visualization
+library(naniar) # visualize missing data
+library(mice) # imputação de dados ausentes
+library(scorecard) # discretização de variáveis (muito utilizado em modelos de score de crédito)
+library(caret) # machine learning (r base)
+library(cvms) # visualização - matriz de confusão mais elegante
+```
+
+# Leitura de funções
+
+```{r}
+source(paste0(getwd(),'/funcoes/tabela_metadados.R'),encoding='utf-8')
+source(paste0(getwd(),'/funcoes/funcoes_analiseunivariada.R'),encoding='utf-8')
+source(paste0(getwd(),'/funcoes/funcoes_analisebivariada.R'),encoding='utf-8')
+```
+
+```{r}
+options(digits = 3)
+options(max.print = 50)
+
+options(repr.matrix.max.rows = 15)
+#options(repr.matrix.max.cols = 30)
+```
+
+# Importando os dados, juntando as tabelas e pré-processamento
+
+```{r}
+#setwd("C:/Users/joaom/OneDrive/JM/Projetos_Extracurriculares/Kaggle/Titanic")
+getwd()
+options(scipen=999,digits=10)
+train <- read.csv("../../train.csv",
+                  sep=",", stringsAsFactors = FALSE,
+                  na.strings = "")
+test <- read.csv("../../test.csv",
+                 sep=",", stringsAsFactors = FALSE,
+                 na.strings = "")
+dim(train)
+dim(test)
+dim(train)[1]+dim(test)[1]
+```
+
+```{r}
+train['Sample'] <- as.factor('train')
+
+test['Survived'] <- NA
+test['Sample'] <- as.factor('test')
+
+test <- test[colnames(train)]
+```
+
+```{r}
+df <- rbind(train,test)
+df %>% dim()
+```
+
+```{r}
+df[['PassengerId']] <- as.factor(df[['PassengerId']])
+df[['Survived']] <- relevel(as.factor(df[['Survived']]),"1")
+df[['Pclass']] <- factor(df[['Pclass']],ordered=TRUE)
+df[['Sex']] <- as.factor(df[['Sex']])
+df[['Cabin']] <- as.factor(df[['Cabin']])
+df[['Embarked']] <- as.factor(df[['Embarked']])
+```
+
+# Tabela de Metadados
+
+```{r}
+str(df)
+```
+
+```{r}
+glimpse(df)
+```
+
+# Tabela de Metadados (Foco na Análise Exploratória e Tratamento dos dados)
+
+```{r}
+vector_vars_drop <- c('PassengerId','Name','Ticket','Sample')
+```
+
+```{r}
+tabela_metadados(tabela_de_entrada = df[df[['Sample']] == 'train',],
+                 sufixo_da_tabela_saida = 'df_train',
+                 vector_vars_drop = vector_vars_drop)
+```
+
+```{r}
+tabela_metadados(tabela_de_entrada = df[df[['Sample']] == 'test',],
+                 sufixo_da_tabela_saida = 'df_test',
+                 vector_vars_drop = vector_vars_drop)
+```
+
+```{r}
+tabela_metadados(tabela_de_entrada = df,
+                 sufixo_da_tabela_saida = 'df',
+                 vector_vars_drop = vector_vars_drop)
+```
+
+# Análise Descritiva e Exploratória
+
+## Análise de Dados Faltantes
+
+```{r}
+naniar::vis_miss(df[df[['Sample']] == 'train',])
+```
+
+## Análise de Correlação
+
+```{r}
+table_train_for_cor <- df[ df[['Sample']] == 'train', metadata_table_df[metadata_table_df[['drop']] == FALSE, 'columns'] ]
+
+# http://demosophy.org/heterogeneous-correlation-matrix/
+rp_train <- polycor::hetcor(table_train_for_cor,std.err = FALSE,
+                            use="pairwise.complete.obs",
+                            pd=FALSE)
+# rp_train[c('correlations','type')] # correlations e type (separados)
+rp_train_modified <- rp_train[['correlations']]
+rp_train_modified <- round(rp_train_modified,5)
+rp_train_modified[upper.tri(rp_train_modified)] <- rp_train[['type']][upper.tri(rp_train_modified)]
+```
+
+```{r}
+table_test_for_cor <- df[ df[['Sample']] == 'test', metadata_table_df[metadata_table_df[['drop']] == FALSE, 'columns'] ]
+
+# http://demosophy.org/heterogeneous-correlation-matrix/
+rp_test <- polycor::hetcor(table_test_for_cor,std.err = FALSE,
+                            use="pairwise.complete.obs",
+                            pd=FALSE)
+# rp_test[c('correlations','type')] # correlations e type (separados)
+rp_test_modified <- rp_test[['correlations']]
+rp_test_modified <- round(rp_test_modified,5)
+rp_test_modified[upper.tri(rp_test_modified)] <- rp_test[['type']][upper.tri(rp_test_modified)]
+```
+
+```{r}
+rp_train_modified
+```
+
+```{r}
+rp_test_modified
+```
+
+# Análise Univariada
+## Sample
+
+```{r}
+calcula_tab_frequencia(tabela_de_entrada=df,
+                        nome_variavel='Sample')
+```
+
+```{r}
+grafico_tab_frequencia(table_count_prop=table_count_propSample,
+                        nome_variavel='Sample',
+                        cor_grafico='black',
+                        hjust_e=-0.08,hjust_d=0.08,
+                        size=6,tx1=0.1,tx2=1.2)
+gg_count_propSample <- gg_count_propSample + theme(axis.text=element_text(size=14),
+                                                    axis.title=element_text(size=14))
+gg_count_propSample
+```
+
+## Survived (Resposta)
+
+```{r}
+calcula_tab_frequencia(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                        nome_variavel='Survived')
+```
+
+```{r}
+grafico_tab_frequencia(table_count_prop=table_count_propSurvived,
+                        nome_variavel='Survived',
+                        cor_grafico='blue',
+                        hjust_e=-0.08,hjust_d=0.08,
+                        size=6,tx1=0.1,tx2=1.05)
+gg_count_propSurvived <- gg_count_propSurvived + theme(axis.text=element_text(size=14),
+                                                    axis.title=element_text(size=14))
+gg_count_propSurvived
+```
+
+# Análise Univariada e Bivariada
+
+## Pclass
+
+```{r}
+calcula_tab_frequencia(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                        nome_variavel='Pclass')
+```
+
+```{r}
+grafico_tab_frequencia(table_count_prop=table_count_propPclass,
+                        nome_variavel='Pclass',
+                        cor_grafico='red',
+                        hjust_e=-0.12,hjust_d=0.12,
+                        size=5.5,tx1=0.1,tx2=1.05)
+gg_count_propPclass <- gg_count_propPclass + theme(axis.text=element_text(size=14),
+                                                    axis.title=element_text(size=14))
+gg_count_propPclass
+```
+
+## Survived x Pclass
+
+```{r}
+calcula_tab_frequencia_bivariada(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                                 nome_variavel1='Survived',
+                                 nome_variavel2='Pclass')
+```
+
+```{r}
+grafico_tab_frequencia_bivariada2(table_count_prop=table_count_propSurvived_Pclass,
+                                  nome_variavel1='Survived',
+                                  nome_variavel2='Pclass',
+                                  tx1=0.2,tx2=1.1,size=6,legend=TRUE)
+
+gg_count_propSurvived_Pclass <- gg_count_propSurvived_Pclass + theme(axis.text=element_text(size=15),
+                                                                axis.title=element_text(size=15),
+                                                                legend.title=element_text(size=15),
+                                                                legend.text=element_text(size=15)) +
+                                                                scale_fill_brewer(palette="Set2")
+gg_count_propSurvived_Pclass
+```
+
+```{r}
+grafico_tab_frequencia_bivariada3(table_count_prop=table_count_propSurvived_Pclass,
+                                  nome_variavel1='Survived',
+                                  nome_variavel2='Pclass',
+                                  size=6,tx=0,legend=TRUE)
+gg_count_propSurvived_Pclass <- gg_count_propSurvived_Pclass + theme(axis.text=element_text(size=15),
+                                                                axis.title=element_text(size=15),
+                                                                legend.title=element_text(size=15),
+                                                                legend.text=element_text(size=15)) +
+                                                                scale_fill_brewer(palette="Set2")
+gg_count_propSurvived_Pclass
+```
+
+## Sex
+
+```{r}
+calcula_tab_frequencia(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                        nome_variavel='Sex')
+```
+
+```{r}
+grafico_tab_frequencia(table_count_prop=table_count_propSex,
+                        nome_variavel='Sex',
+                        cor_grafico='darkgreen',
+                        hjust_e=-0.09,hjust_d=0.09,
+                        size=6.5,tx1=0.1,tx2=1.05)
+gg_count_propSex <- gg_count_propSex + theme(axis.text=element_text(size=14),
+                                            axis.title=element_text(size=14))
+gg_count_propSex
+```
+
+## Survived x Sex
+
+```{r}
+calcula_tab_frequencia_bivariada(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                                 nome_variavel1='Survived',
+                                 nome_variavel2='Sex')
+```
+
+```{r}
+grafico_tab_frequencia_bivariada2(table_count_prop=table_count_propSurvived_Sex,
+                                  nome_variavel1='Survived',
+                                  nome_variavel2='Sex',
+                                  tx1=0.15,tx2=1.1,size=6,legend=TRUE)
+
+gg_count_propSurvived_Sex <- gg_count_propSurvived_Sex + theme(axis.text=element_text(size=15),
+                                                                axis.title=element_text(size=15),
+                                                                legend.title=element_text(size=15),
+                                                                legend.text=element_text(size=15)) +
+                                                                scale_fill_brewer(palette="Set2")
+gg_count_propSurvived_Sex
+```
+
+```{r}
+grafico_tab_frequencia_bivariada3(table_count_prop=table_count_propSurvived_Sex,
+                                  nome_variavel1='Survived',
+                                  nome_variavel2='Sex',
+                                  size=6,tx=0,legend=TRUE)
+gg_count_propSurvived_Sex <- gg_count_propSurvived_Sex + theme(axis.text=element_text(size=15),
+                                                                axis.title=element_text(size=15),
+                                                                legend.title=element_text(size=15),
+                                                                legend.text=element_text(size=15)) +
+                                                                scale_fill_brewer(palette="Set2")
+gg_count_propSurvived_Sex
+```
+
+## SibSp
+
+```{r}
+calcula_tab_frequencia(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                        nome_variavel='SibSp')
+```
+
+```{r}
+grafico_tab_frequencia2(table_count_prop=table_count_propSibSp,
+                        nome_variavel='SibSp',
+                        cor_grafico='orange',
+                        size=6.5,tx1=0.2,tx2=1.05,
+                        coord_flip=FALSE)
+gg_count_propSibSp <- gg_count_propSibSp + theme(axis.text=element_text(size=14),
+                                            axis.title=element_text(size=14))
+gg_count_propSibSp
+```
+
+## Survived x SibSp
+
+```{r}
+calcula_tab_frequencia_bivariada(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                                 nome_variavel1='Survived',
+                                 nome_variavel2='SibSp')
+```
+
+```{r}
+grafico_tab_frequencia_bivariada2(table_count_prop=table_count_propSurvived_SibSp,
+                                  nome_variavel1='Survived',
+                                  nome_variavel2='SibSp',
+                                  tx1=0.5,tx2=1,size=4.8,
+                                  legend=TRUE,percentage=TRUE,count=FALSE)
+
+gg_count_propSurvived_SibSp <- gg_count_propSurvived_SibSp + theme(axis.text=element_text(size=15),
+                                                                axis.title=element_text(size=15),
+                                                                legend.title=element_text(size=15),
+                                                                legend.text=element_text(size=15)) +
+                                                                scale_fill_brewer(palette="Set2")
+gg_count_propSurvived_SibSp
+```
+
+```{r}
+grafico_tab_frequencia_bivariada3(table_count_prop=table_count_propSurvived_SibSp,
+                                  nome_variavel1='Survived',
+                                  nome_variavel2='SibSp',
+                                  size=6,tx=0,legend=TRUE)
+gg_count_propSurvived_SibSp <- gg_count_propSurvived_SibSp + theme(axis.text=element_text(size=15),
+                                                                axis.title=element_text(size=15),
+                                                                legend.title=element_text(size=15),
+                                                                legend.text=element_text(size=15)) +
+                                                                scale_fill_brewer(palette="Set2")
+gg_count_propSurvived_SibSp
+```
+
+## Parch
+
+```{r}
+calcula_tab_frequencia(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                        nome_variavel='Parch')
+```
+
+```{r}
+grafico_tab_frequencia2(table_count_prop=table_count_propParch,
+                        nome_variavel='Parch',
+                        cor_grafico='purple',
+                        size=6.5,tx1=0.4,tx2=1.05,
+                        coord_flip=FALSE)
+gg_count_propParch <- gg_count_propParch + theme(axis.text=element_text(size=14),
+                                            axis.title=element_text(size=14))
+gg_count_propParch
+```
+
+## Survived x Parch
+
+```{r}
+calcula_tab_frequencia_bivariada(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                                 nome_variavel1='Survived',
+                                 nome_variavel2='Parch')
+```
+
+```{r}
+grafico_tab_frequencia_bivariada2(table_count_prop=table_count_propSurvived_Parch,
+                                  nome_variavel1='Survived',
+                                  nome_variavel2='Parch',
+                                  tx1=0.3,tx2=0.7,size=4.8,
+                                  legend=TRUE,percentage=TRUE,count=FALSE)
+
+gg_count_propSurvived_Parch <- gg_count_propSurvived_Parch + theme(axis.text=element_text(size=15),
+                                                                axis.title=element_text(size=15),
+                                                                legend.title=element_text(size=15),
+                                                                legend.text=element_text(size=15)) +
+                                                                scale_fill_brewer(palette="Set2")
+gg_count_propSurvived_Parch
+```
+
+```{r}
+grafico_tab_frequencia_bivariada3(table_count_prop=table_count_propSurvived_Parch,
+                                  nome_variavel1='Survived',
+                                  nome_variavel2='Parch',
+                                  size=6,tx=0,legend=TRUE)
+gg_count_propSurvived_Parch <- gg_count_propSurvived_Parch + theme(axis.text=element_text(size=15),
+                                                                axis.title=element_text(size=15),
+                                                                legend.title=element_text(size=15),
+                                                                legend.text=element_text(size=15)) +
+                                                                scale_fill_brewer(palette="Set2")
+gg_count_propSurvived_Parch
+```
+
+## Fare
+
+```{r}
+binning_quantities(dados_entrada=df[df[['Sample']] == 'train',],
+                    nome_variavel='Fare',
+                    method='Sturges')
+```
+
+```{r}
+df[df[['Sample']] == 'train','Fare_binning'] <- lista_Fare[['dados_saida']]
+calcula_tab_frequencia(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                        nome_variavel='Fare_binning')
+```
+
+```{r}
+grafico_tab_frequencia2(table_count_prop=table_count_propFare_binning,
+                        nome_variavel='Fare_binning',
+                        cor_grafico='darkgreen',
+                        size=5.5,tx1=0.4,tx2=1.05,
+                        coord_flip=FALSE)
+gg_count_propFare_binning <- gg_count_propFare_binning + theme(axis.text=element_text(size=12),
+                                            axis.title=element_text(size=12))
+gg_count_propFare_binning
+```
+
+```{r}
+df <- select(df,-c('Fare_binning')) # drop column Age_binning
+```
+
+## Survived x Fare
+
+```{r}
+tapply(X=df[df[['Sample']] == 'train','Fare'],
+        INDEX=df[df[['Sample']] == 'train','Survived'],
+        FUN=summary)
+```
+
+```{r}
+ggplot(aes_string(x='Survived',y='Fare'),data=df[df[['Sample']] == 'train',]) + geom_boxplot() + coord_flip()
+```
+
+# Preenchendo o dado faltante (Mr. Thomas Storey)
+
+```{r}
+df[is.na(df[['Fare']]),]
+```
+
+Uma das técnicas mais rápidas e menos trabalhosas para substituir um dado faltante é a utilização das próprias medidas de posição, apesar de existirem outras técnicas com melhor fundamentação teórica. Considerando que para o caso da variável Fare existe somente um dado faltante, essa técnica foi a escolhida. Além disso, visto que os dados de Fare e Pclass estão negativamente correlacionados, verificou-se o comportamento dessas duas variáveis para que um valor mais lógico pudesse ser utilizado para substituir o dado faltante.
+
+```{r}
+ggplot(aes_string(y='Fare',x='Pclass'),data=df[df[['Sample']] == 'train',]) + geom_boxplot()
+```
+
+A medida de posição escolhida foi a mediana. Além disso, como o indivíduo pertence a terceira classe, foi escolhida a mediana da terceira classe para substituir o dado faltante.
+
+```{r}
+df[df[['Sample']] == 'train',] %>%
+    group_by(Pclass) %>%
+    summarise(summary = list(c(summary(object = Fare)))) %>%
+    unnest_wider(summary)
+```
+
+```{r}
+df[is.na(df[['Fare']]),'Fare'] <- 8.0500
+```
+
+```{r}
+df[is.na(df[['Fare']]),'Fare']
+```
+
+```{r}
+df[df[['PassengerId']] == 1044,]
+```
+
+## Cabin
+
+```{r}
+calcula_tab_frequencia(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                        nome_variavel='Cabin',
+                        decreasing = TRUE)
+```
+
+## Survived X Cabin
+
+### Método Optimal Binning - Junção de categorias por métodos automáticos
+
+Dicas para discretização via WOE: 
+
+- 1) Todas as categorias calculadas têm pelo menos 5% das observações. 
+- 2) Todas as categorias calculadas têm valores diferentes de zero para o número de casos bons e ruins. 
+- 3) Os Woe's são distintos para cada categoria calculada. As categorias calculadas que tinham Woe's semelhantes foram agrupadas. 
+- 4) Valores ausentes estão em categorias separadas. 
+- 5) Os Woe's são monotônicos, isto é, estão crescendo ou diminuindo com os agrupamentos. (Recomendação do uso dessa dica é mais fraca do que para as outras dicas).
+
+```{r}
+df[['Survived_BadGod']] <- df[['Survived']]
+levels(df[['Survived_BadGod']]) <- c('bad','good') # factor(c('1','0'))
+```
+
+```{r}
+bins <- woebin(df[df[['Sample']] == 'train',],
+                check_cate_num = FALSE, # usar quando o numero de categorias é > 50
+                x='Cabin',
+                y='Survived_BadGod',
+                method='chimerge')
+bins
+```
+
+```{r}
+woebin_plot(bins)
+```
+
+O método optimal binning da função **woebin** com o argumento **method='chimerge'** apenas dividiu a variável Cabin em duas categorias: missing e não missing. Se é de interesse ter um maior detalhamento da variável em mais categorias, é interessante utilizar o argumento **method='tree'**. Por simplificação, o método **chimerge** foi escolhido.
+
+```{r}
+# df <- woebin_ply(df, bins=bins, to = "bin", print_step = TRUE) # to = "bin" ou to = "woe"
+df[['Cabin']] <- as.factor(ifelse(is.na(df[['Cabin']]),NA,'AnyCabin'))
+df <- df %>% select(-c('Survived_BadGod'))
+df %>% head()
+```
+
+## Embarked
+
+```{r}
+calcula_tab_frequencia(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                        nome_variavel='Embarked')
+```
+
+```{r}
+grafico_tab_frequencia2(table_count_prop=table_count_propEmbarked,
+                        nome_variavel='Embarked',
+                        cor_grafico='darkred',
+                        size=6,tx1=0.15,tx2=1.05,
+                        coord_flip=FALSE)
+gg_count_propEmbarked <- gg_count_propEmbarked + theme(axis.text=element_text(size=12),
+                                            axis.title=element_text(size=12))
+gg_count_propEmbarked
+```
+
+```{r}
+df[is.na(df[['Embarked']]),]
+```
+
+Intuitivamente, poderia ser utilizado o método de imputação de dados ausentes pela classe mais frequente pois são poucos casos (2 observações). Além disso, em pesquisas pela internet, foi constatado que as duas mulheres embarcaram em Southampton (S). Portanto, faz sentido seguir com esse preenchimento dos dados.
+
+```{r}
+df[is.na(df[['Embarked']]),'Embarked'] <- 'S'
+```
+
+```{r}
+df[df[['PassengerId']] %in% c(62,830),]
+```
+
+```{r}
+calcula_tab_frequencia(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                        nome_variavel='Embarked')
+```
+
+```{r}
+grafico_tab_frequencia2(table_count_prop=table_count_propEmbarked,
+                        nome_variavel='Embarked',
+                        cor_grafico='darkred',
+                        size=6,tx1=0.15,tx2=1.05,
+                        coord_flip=FALSE)
+gg_count_propEmbarked <- gg_count_propEmbarked + theme(axis.text=element_text(size=12),
+                                            axis.title=element_text(size=12))
+gg_count_propEmbarked
+```
+
+## Survived X Embarked
+
+```{r}
+calcula_tab_frequencia_bivariada(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                                 nome_variavel1='Survived',
+                                 nome_variavel2='Embarked')
+```
+
+```{r}
+grafico_tab_frequencia_bivariada2(table_count_prop=table_count_propSurvived_Embarked,
+                                  nome_variavel1='Survived',
+                                  nome_variavel2='Embarked',
+                                  tx1=0.2,tx2=0,size=6,
+                                  legend=TRUE,percentage=TRUE,count=TRUE)
+
+gg_count_propSurvived_Embarked <- gg_count_propSurvived_Embarked + theme(axis.text=element_text(size=12),
+                                                                axis.title=element_text(size=15),
+                                                                legend.title=element_text(size=15),
+                                                                legend.text=element_text(size=15)) +
+                                                                scale_fill_brewer(palette="Set2")
+gg_count_propSurvived_Embarked
+```
+
+```{r}
+grafico_tab_frequencia_bivariada3(table_count_prop=table_count_propSurvived_Embarked,
+                                  nome_variavel1='Survived',
+                                  nome_variavel2='Embarked',
+                                  size=6,tx=0,legend=TRUE)
+gg_count_propSurvived_Embarked <- gg_count_propSurvived_Embarked + theme(axis.text=element_text(size=12),
+                                                                axis.title=element_text(size=15),
+                                                                legend.title=element_text(size=15),
+                                                                legend.text=element_text(size=15)) +
+                                                                scale_fill_brewer(palette="Set2")
+gg_count_propSurvived_Embarked
+```
+
+## Age
+
+```{r}
+binning_quantities(dados_entrada=df[df[['Sample']] == 'train',],
+                    nome_variavel='Age',
+                    method='Sturges')
+```
+
+```{r}
+df[df[['Sample']] == 'train','Age_binning'] <- lista_Age[['dados_saida']]
+calcula_tab_frequencia(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                        nome_variavel='Age_binning')
+```
+
+```{r}
+grafico_tab_frequencia3(table_count_prop=table_count_propAge_binning,
+                       nome_variavel='Age_binning',
+                       cor_grafico='darkgreen',
+                       size=4.5,
+                       angle=45,tx1=0.4,tx2=1.2,
+                       legend=TRUE,percentage=TRUE,count=TRUE)
+gg_count_propAge_binning <- gg_count_propAge_binning + theme(axis.text=element_text(size=15),
+                                                            axis.title=element_text(size=15))
+gg_count_propAge_binning
+```
+
+```{r}
+df <- select(df,-c('Age_binning')) # drop column Age_binning
+```
+
+O gráfico mostra que aproximadamente 19,87% dos indivíduos não tiveram as suas idades registradas. Portanto, há presença de dados ausentes e isso pode gerar predições ruins se não for tratado adequadamente. Uma das abordagens a ser utilizada seria a discretização da variável Age, o que permitiria a separação da categoria NA em uma categoria separada. Como isso já foi feito na resolução em Python, utilizamos uma outra abordagem que é conhecida na literatura como Imputação de Dados Ausentes.
+
+Acreditamos que o mecanismo gerador dos dados é MCAR (Missing Completely at Random). Duas abordagens foram utilizadas: 
+- 1) Substituição dos dados faltantes pela mediana;
+- 2) Utilização do pacote mice.
+
+### 1 - Substituição dos dados faltantes pela mediana;
+
+```{r}
+df[['Age_t_missing']] <- df[['Age']]
+df[df[['Sample']] == 'train' & is.na(df[['Age']]),'Age_t_missing'] <- round(median(df[df[['Sample']] == 'train','Age'], na.rm = T), 2)
+```
+
+```{r}
+round(median(df[df[['Sample']] == 'train','Age'], na.rm = T), 2)
+```
+
+```{r}
+apply_binning_by_limites_intervalos(limites_intervalos=lista_Age$limites_intervalos,
+                                    dados_entrada=df[df[['Sample']] == 'train',],
+                                    nome_variavel='Age_t_missing')
+```
+
+```{r}
+df[df[['Sample']] == 'train','Age_t_missing_categ'] <- lista_Age_t_missing[['dados_saida']]
+```
+
+```{r}
+calcula_tab_frequencia(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                        nome_variavel='Age_t_missing_categ')
+```
+
+```{r}
+grafico_tab_frequencia3(table_count_prop=table_count_propAge_t_missing_categ,
+                       nome_variavel='Age_t_missing_categ',
+                       cor_grafico='darkblue',
+                       size=5,
+                       angle=45,tx1=0.8,tx2=1.2,
+                       legend=TRUE,percentage=TRUE,count=TRUE)
+gg_count_propAge_t_missing_categ <- gg_count_propAge_t_missing_categ + theme(axis.text=element_text(size=15),
+                                                            axis.title=element_text(size=15)) +
+                                                            coord_cartesian(ylim=c(0,400))
+gg_count_propAge_t_missing_categ
+```
+
+Como essa abordagem utiliza uma medida de tendência central e não considera o perfil de cada indivíduo, é possível que isso altere a qualidade do modelo final. Uma abordagem interessante para fazer isso é utilizar o pacote mice.
+
+```{r}
+df <- select(df,-c('Age_t_missing','Age_t_missing_categ')) # drop columns Age_t_missing, Age_t_missing_categ
+```
+
+### 2 - Utilização do pacote mice.
+
+```{r}
+df[['Age_t_missing']] <- df[['Age']]
+```
+
+```{r}
+apply(is.na(df[df[['Sample']] == 'train',c('Pclass','Sex','SibSp','Parch','Fare','Embarked','Cabin','Age_t_missing')]),2,any)
+```
+
+```{r}
+dataset <- df[,c('Pclass','Sex','SibSp','Parch','Fare','Embarked','Cabin','Age_t_missing')]
+dataset
+```
+
+```{r}
+md.pattern(dataset)
+```
+
+```{r}
+imputed_Data <- mice(dataset, m=5, maxit = 50, seed = 500)
+```
+
+```{r}
+summary(imputed_Data)
+```
+
+```{r}
+imputed_Data$method %>% print()
+```
+
+```{r}
+completeData <- mice::complete(imputed_Data)
+completeData
+```
+
+```{r}
+completeData[['Age_t_missing']]
+```
+
+```{r}
+df[,c('Age')] <- completeData[['Age_t_missing']]
+```
+
+```{r}
+apply_binning_by_limites_intervalos(limites_intervalos=lista_Age$limites_intervalos,
+                                    dados_entrada=df[df[['Sample']] == 'train',],
+                                    nome_variavel='Age')
+```
+
+```{r}
+df[df[['Sample']] == 'train','Age_t_missing_categ'] <- lista_Age[['dados_saida']]
+```
+
+```{r}
+calcula_tab_frequencia(tabela_de_entrada=df[df[['Sample']] == 'train',],
+                        nome_variavel='Age_t_missing_categ')
+```
+
+```{r}
+grafico_tab_frequencia3(table_count_prop=table_count_propAge_t_missing_categ,
+                       nome_variavel='Age_t_missing_categ',
+                       cor_grafico='darkblue',
+                       size=5,
+                       angle=45,tx1=0.8,tx2=1.2,
+                       legend=TRUE,percentage=TRUE,count=TRUE)
+gg_count_propAge_t_missing_categ <- gg_count_propAge_t_missing_categ + theme(axis.text=element_text(size=15),
+                                                            axis.title=element_text(size=15)) +
+                                                            coord_cartesian(ylim=c(0,400))
+gg_count_propAge_t_missing_categ
+```
+
+Essa aplicação gerou novos dados para os indivíduos que não tinham as suas idades preenchidas. A utilização do pacote mice permitiu que isso fosse feito considerando o perfil de cada indivíduo, o que deixou o novo histograma com uma distribuição mais simétrica. Portanto, essa ténica foi escolhida como tratamento de dados para a variável Age.
+
+```{r}
+df <- select(df,-c('Age_t_missing','Age_t_missing_categ')) # drop columns Age_t_missing, Age_t_missing_categ
+```
+
+# Cria tabelas finais (com dados tratados)
+
+```{r}
+saveRDS(df,file="df_tidy.rda")
+saveRDS(df[df[['Sample']] == 'train',],
+        file="train_tidy.rda")
+saveRDS(df[df[['Sample']] == 'test',],
+        file="test_tidy.rda")
+```
+
+```{r}
+df_tidy <- readRDS(file="df_tidy.rda")
+train_tidy <- readRDS(file="train_tidy.rda")
+test_tidy <- readRDS(file="test_tidy.rda")
+```
+
+# Tabela de Metadados (Foco em Modelagem Estatística/Machine Learning)
+
+```{r}
+vector_vars_drop <- c('PassengerId','Name','Ticket','Sample')
+```
+
+```{r}
+tabela_metadados(tabela_de_entrada = train_tidy,
+                 sufixo_da_tabela_saida = 'train_tidy',
+                 vector_vars_drop = vector_vars_drop)
+```
+
+```{r}
+tabela_metadados(tabela_de_entrada = test_tidy,
+                 sufixo_da_tabela_saida = 'test_tidy',
+                 vector_vars_drop = vector_vars_drop)
+```
+
+```{r}
+tabela_metadados(tabela_de_entrada = df_tidy,
+                 sufixo_da_tabela_saida = 'df_tidy',
+                 vector_vars_drop = vector_vars_drop)
+```
+
+Retira as variáveis com drop == TRUE
+
+```{r}
+df_tidy_ml <- df_tidy[,metadata_table_df_tidy[!metadata_table_df_tidy[['drop']],'columns']]
+train_tidy_ml <- train_tidy[,metadata_table_train_tidy[!metadata_table_train_tidy[['drop']],'columns']]
+test_tidy_ml <- test_tidy[,metadata_table_test_tidy[!metadata_table_test_tidy[['drop']],'columns']]
+```
+
+Transforma os NA das covariáveis em strings 'NA'
+
+```{r}
+columns_add_missing_level <- colnames(df_tidy_ml)[apply(is.na(df_tidy_ml),2,any)]
+columns_add_missing_level
+```
+
+Survived
+
+```{r}
+levels(df_tidy_ml[['Survived']]) <- c('bad','good') # factor(c('1','0'))
+levels(train_tidy_ml[['Survived']]) <- c('bad','good') # factor(c('1','0'))
+levels(train_tidy_ml[['Survived']]) <- c('bad','good') # factor(c('1','0'))
+```
+
+Cabin
+
+```{r}
+for(j in 2:length(columns_add_missing_level)){
+    df_tidy_ml[[columns_add_missing_level[j]]] <- addNA(df_tidy_ml[[columns_add_missing_level[j]]])
+    levels(df_tidy_ml[[columns_add_missing_level[j]]])[length(levels(df_tidy_ml[[columns_add_missing_level[j]]]))] <- 'NA'
+
+    train_tidy_ml[[columns_add_missing_level[j]]] <- addNA(train_tidy_ml[[columns_add_missing_level[j]]])
+    levels(train_tidy_ml[[columns_add_missing_level[j]]])[length(levels(train_tidy_ml[[columns_add_missing_level[j]]]))] <- 'NA'
+
+    test_tidy_ml[[columns_add_missing_level[j]]] <- addNA(test_tidy_ml[[columns_add_missing_level[j]]])
+    levels(test_tidy_ml[[columns_add_missing_level[j]]])[length(levels(test_tidy_ml[[columns_add_missing_level[j]]]))] <- 'NA'
+}
+```
+
+```{r}
+str(train_tidy_ml)
+```
+
+```{r}
+str(test_tidy_ml)
+```
+
+```{r}
+str(df_tidy_ml)
+```
+
+```{r}
+#saveRDS(df_tidy_ml,file="df_tidy_ml.rda")
+saveRDS(train_tidy_ml,
+        file="train_tidy_ml.rda")
+saveRDS(test_tidy_ml,
+        file="test_tidy_ml.rda")
+```
+
+```{r}
+#df_tidy_ml <- readRDS(file="df_tidy_ml.rda")
+train_tidy_ml <- readRDS(file="train_tidy_ml.rda")
+test_tidy_ml <- readRDS(file="test_tidy_ml.rda")
+```
+
+# Feature Selection
+
+```{r}
+fit1 <- glm(Survived ~ .,  data = train_tidy_ml,
+            family = binomial(link = "logit"))
+summary(fit1)
+```
+
+```{r}
+## Selecionando covariáveis: Método stepwise
+fit1_featureselection <- step(fit1, direction = "both")
+print(fit1_featureselection)
+```
+
+```{r}
+fit1_featureselection %>% str()
+```
+
+```{r}
+fit1_featureselection$call
+```
+
+```{r}
+fit1_featureselection$model %>% colnames()
+```
+
+```{r}
+summary(fit1_featureselection)
+```
+
+```{r}
+print(anova(fit1_featureselection, test = "Chisq"))
+```
+
+```{r}
+## Fator de influência na variância (VIF) acima de 5 ou 10 indica problema
+# VIF measures the correlation and strength of correlation between the predictor variables in a regression model.
+# A value of 1 indicates there is no correlation between a given predictor variable and any other predictor variables in the model.
+# A value between 1 and 5 indicates moderate correlation between a given predictor variable and other predictor variables in the model, but this is often not severe enough to require attention.
+# A value greater than 5 indicates potentially severe correlation between a given predictor variable and other predictor variables in the model. In this case, the coefficient estimates and p-values in the regression output are likely unreliable.
+
+# Note that a correlation matrix and a VIF will provide you with similar information:
+# they both tell you when one variable is highly correlated with one or more other variables in a regression model.
+print(car::vif(fit1_featureselection))
+```
+
+# Seleção do Modelo Preditivo
+
+```{r}
+trainControl <- trainControl(method="repeatedcv", number=10, repeats=3)
+metric <- "Accuracy"
+```
+
+```{r}
+names(getModelInfo())
+```
+
+```{r}
+set.seed(7)
+fit.glm1 <- train(Survived~., data=train_tidy_ml, method="glm", metric=metric, trControl=trainControl)
+fit.knn1 <- train(Survived~., data=train_tidy_ml, method="knn", metric=metric, trControl=trainControl)
+fit.svm1 <- train(Survived~., data=train_tidy_ml, method="svmLinear", metric=metric,trControl=trainControl) # Support Vector Machines with Radial Linear Kernel
+fit.svm2 <- train(Survived~., data=train_tidy_ml, method="svmRadial", metric=metric,trControl=trainControl) # Support Vector Machines with Radial Basis Function Kernel
+
+# Bagging:
+fit.treebag <- train(Survived~., data=train_tidy_ml, method="treebag", metric=metric,trControl=trainControl) # BAG: Bagged CART (Técnicas de bootstrap)
+fit.rf <- train(Survived~., data=train_tidy_ml, method="rf", metric=metric,trControl=trainControl) # RF: Random Forest (Combina diversas árvores de decisão e adiciona um componente estocástico)
+# Boosting:
+fit.gbm <- train(Survived~., data=train_tidy_ml, method="gbm", metric=metric, trControl=trainControl, verbose=FALSE) # GBM: Stochastic Gradient Boosting (Extensão do Adaboost)
+fit.c50 <- train(Survived~., data=train_tidy_ml, method="C5.0", metric=metric, trControl=trainControl) # C5.0
+
+results <- resamples(list(LG=fit.glm1, KNN=fit.knn1, SVM_Linear=fit.svm1,SVM_Radial=fit.svm2,
+                        BAG=fit.treebag, RF=fit.rf,
+                        GBM=fit.gbm, C50=fit.c50))
+
+dotplot(results)
+```
+
+# Otimização do Modelo - Ajuste de Hyperparâmetros
+
+```{r}
+grid <- expand.grid(.sigma=c(0.025, 0.05, 0.1, 0.15), .C=seq(1, 10, by=1))
+fit.svm_final <- train(Survived~., data=train_tidy_ml, method="svmRadial", metric=metric, tuneGrid=grid, trControl=trainControl)
+print(fit.svm_final)
+```
+
+```{r}
+plot(fit.svm_final)
+```
+
+# Split em treino e teste
+
+```{r}
+set.seed(1234)
+indxTrain <- sample(1:dim(train_tidy_ml)[1], round(dim(train_tidy_ml)[1]*0.75,0))
+train_final <- train_tidy_ml[indxTrain,]
+test_final <- train_tidy_ml[-indxTrain,]
+train_final %>% dim()
+test_final %>% dim()
+```
+
+# Métricas para Algoritmos de Classificação
+
+```{r}
+train_final$predictions <- predict(object=fit.svm_final, newdata=train_final, type="raw")
+test_final$predictions <- predict(object=fit.svm_final, newdata=test_final, type="raw")
+```
+
+```{r}
+cM_train_final <- confusionMatrix(train_final$predictions, train_final$Survived)
+cM_test_final <- confusionMatrix(test_final$predictions, test_final$Survived)
+```
+
+```{r}
+cM_train_final
+```
+
+```{r}
+cM_test_final
+```
+
+```{r}
+cvms::plot_confusion_matrix(as_tibble(cM_train_final$table), 
+                      target_col = "Prediction", 
+                      prediction_col = "Reference",
+                      counts_col = "n",
+                      palette = "Greens")
+```
+
+```{r}
+cvms::plot_confusion_matrix(as_tibble(cM_test_final$table), 
+                      target_col = "Prediction", 
+                      prediction_col = "Reference",
+                      counts_col = "n",
+                      palette = "Greens")
+```
+
+```{r}
+round(cbind(cM_overall_train_final=cM_train_final$overall,
+        cM_overall_test_final=cM_test_final$overall),4)
+```
+
+```{r}
+round(cbind(cM_overall_train_final=cM_train_final$byClass,
+        cM_overall_test_final=cM_test_final$byClass),4)
+```
+
+# Salvando o resultado do seu trabalho
+
+```{r}
+saveRDS(fit.svm_final,file="modelo_classificador_final.rda")
+```
+
+```{r}
+modelo_classificador_final <- readRDS(file="modelo_classificador_final.rda")
+```
+
+```{r}
+modelo_classificador_final
+```
+
+```{r}
+final_predict <- predict(modelo_classificador_final, newdata = test_tidy_ml, type = "raw")
+final_predict <- ifelse(final_predict == 'bad',1,0)
+final_predict
+```
+
+```{r}
+test <- read.csv("../../test.csv",
+                 sep=",", stringsAsFactors = FALSE,
+                 na.strings = "")
+```
+
+```{r}
+predict_submission <- data.frame(PassengerId=test$PassengerId,Survived=final_predict)
+#write.csv(predict_submission,'predict_submission.csv',row.names = FALSE,fileEncoding = "utf-8", quote = FALSE)
+write_csv(predict_submission,'predict_submission.csv')
+```
+
+```{r}
+predict_submission
+```
+
